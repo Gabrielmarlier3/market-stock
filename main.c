@@ -8,6 +8,9 @@
 #define LINE_MAX_LEN 100
 #define NAME_LEN 60
 #define DELIMITERS ","
+#define MAX_ITEM_PER_PAGE 20
+#define ENABLE_LOGS 0
+FILE *fp;
 
 typedef struct {
     int id;
@@ -17,11 +20,29 @@ typedef struct {
 } Item;
 
 
+static Item itens[MAX_ITEM_PER_PAGE];
+
+static int openFile() {
+    fp = fopen(DB_PATH, "r+");
+
+    if (fp == NULL) {
+        printf("File didn't open correctly");
+        return 0;
+    }
+    return 1;
+}
+
+static void closeFile() {
+    if (fclose(fp) != 0) {
+        printf("File didn't close correctly");
+    }
+}
+
 static Item processTokens(char *token) {
     Item n;
     int i = 0;
     while (token != NULL && i < 4) {
-        printf("Token encontrado: %s\n", token);
+        ENABLE_LOGS && printf("Token encontrado: %s\n", token);
 
         switch (i++) {
             case 0: {
@@ -49,16 +70,17 @@ static Item processTokens(char *token) {
     return n;
 }
 
-static Item findItemById(FILE *fp, int id, fpos_t *pos) {
+static Item findItemById(int id, fpos_t *pos) {
     Item n = {};
 
     int lastId = 0;
     while (1) {
         char a[LINE_MAX_LEN + 1];
         if (fgetpos(fp, pos) == 0) {
-            printf("Current position of file pointer found\n");
+            ENABLE_LOGS && printf("Current position of file pointer found\n");
         }
-        printf("o que tem: %s\n", fgets(a, LINE_MAX_LEN + 1, fp));
+        fgets(a, LINE_MAX_LEN + 1, fp);
+        ENABLE_LOGS && printf("o que tem: %s\n", a);
 
         char *token = strtok(a, DELIMITERS);
         n = processTokens(token);
@@ -75,16 +97,17 @@ static Item findItemById(FILE *fp, int id, fpos_t *pos) {
     return n;
 }
 
-static Item findItemByName(FILE *fp, const char name[NAME_LEN + 1], fpos_t *pos) {
+static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *pos) {
     Item n = {};
 
     int lastId = 0;
     while (1) {
         char a[NAME_LEN + 1];
         if (fgetpos(fp, pos) == 0) {
-            printf("Current position of file pointer found\n");
+            ENABLE_LOGS && printf("Current position of file pointer found\n");
         }
-        printf("o que tem: %s\n", fgets(a, LINE_MAX_LEN + 1, fp));
+        fgets(a, LINE_MAX_LEN + 1, fp);
+        ENABLE_LOGS && printf("o que tem: %s\n", a);
 
         char *token = strtok(a, DELIMITERS);
         n = processTokens(token);
@@ -117,10 +140,10 @@ static Item findItemByName(FILE *fp, const char name[NAME_LEN + 1], fpos_t *pos)
     return n;
 }
 
-static void editLine(FILE *fp, Item n, const fpos_t *initial_pos) {
+static void editLine(Item n, const fpos_t *initial_pos) {
     fpos_t final_pos;
     if (fgetpos(fp, &final_pos) == 0) {
-        printf("Current position of file pointer found\n");
+        ENABLE_LOGS && printf("Current position of file pointer found\n");
     }
     char newItem[LINE_MAX_LEN];
     sprintf(newItem, "%d,%s,%d,%.2f", n.id, n.name, n.quantity, n.price);
@@ -139,53 +162,65 @@ static void editLine(FILE *fp, Item n, const fpos_t *initial_pos) {
     fsetpos(fp, initial_pos);
     strcat(newItem, ";\n");
     if (strlen(newItem) != 100) {
-        printf("Line is longer or less than 100 digits: %d", strlen(newItem));
+        printf("Line is longer or less than 100 digits: %lu", strlen(newItem));
     }
     fputs(newItem, fp);
 }
 
-int main(void) {
-    FILE *fp = fopen(DB_PATH, "r+");
-    fpos_t initial_pos;
-    if (fp == NULL) {
-        return EXIT_FAILURE; /* can't open file */
+static void clearPreviousItems() {
+    for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
+        const Item n = {};
+        itens[i] = n;
+    }
+}
+
+static Item getAllItem(int page) {
+    clearPreviousItems();
+    int startId = (MAX_ITEM_PER_PAGE * page) - MAX_ITEM_PER_PAGE;
+    for (int i = 0; i <= MAX_ITEM_PER_PAGE; i++) {
+        fpos_t pos;
+        Item item = findItemById(startId + (i + 1), &pos);
+
+        if (item.id == -2) {
+            printf("Collected all the items");
+            break;
+        }
+        itens[i] = item;
     }
 
-    Item item = findItemById(fp, 2, &initial_pos);
-
-    printf("Id: %d | Name: %s | Quantity: %d | Price: %.2f", item.id, item.name, item.quantity, item.price);
-    item.quantity = item.quantity + 10000;
-
-    editLine(fp, item, &initial_pos);
+    return *itens;
 }
 
 
-// #include  <stdio.h>
-// #define  NUM  100
-//
-// int main(void) {
-//     FILE *stream;
-//     fpos_t pos;
-//     int numwritten;
-//     char a[30] = "Bom dia1!\n";
-//     char b[30] = "Bom dia2!";
-//     char c[30] = "Mal";
-//     char temp[30];
-//
-//     stream = fopen("/home/gabriel/repositorios/loja_do_marcos/teste.txt", "r+b");
-//
-//     printf("Inicio ou fim da linha: %s", fgets(temp, NUM, stream));
-//     if (fgetpos(stream, &pos) == 0) {
-//         printf("Current position of file pointer found\n");
+int main(void) {
+    if (!openFile()) {
+        return EXIT_FAILURE;
+    };
+
+    getAllItem(1);
+
+
+
+
+    closeFile();
+}
+
+
+//todo: logica para pegar todos os items
+// for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
+//     Item item = itens[i];
+//     if (item.id == 0) {
+//         printf("No items left");
+//         break;
 //     }
-//     numwritten = fputs(a, stream);
-//
-//
-//     numwritten = fputs(b, stream);
-//     fsetpos(stream, &pos);
-//
-//
-//     numwritten = fputs("    ", stream);
-//
-//     printf("Number of items successfully written = %d\n", numwritten);
+//     printf("Id: %d | Name: %s | Quantity: %d | Price: %.2f\n", item.id, item.name, item.quantity, item.price);
 // }
+
+//todo: logica para editar um item
+//    // fpos_t initial_pos;
+// Item item = findItemById(2, &initial_pos);
+//
+// printf("Id: %d | Name: %s | Quantity: %d | Price: %.2f", item.id, item.name, item.quantity, item.price);
+// item.quantity = item.quantity + 10000;
+//
+// editLine(item, &initial_pos);
