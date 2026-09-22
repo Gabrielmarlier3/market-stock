@@ -23,6 +23,11 @@ typedef struct {
 static Item itens[MAX_ITEM_PER_PAGE];
 
 static int openFile() {
+    if (fp != NULL) {
+        fseek(fp, 0L, SEEK_SET);
+        return 1;
+    }
+
     fp = fopen(DB_PATH, "r+");
 
     if (fp == NULL) {
@@ -70,13 +75,14 @@ static Item processTokens(char *token) {
     return n;
 }
 
-static Item findItemById(int id, fpos_t *pos) {
+static Item findItemById(int id, fpos_t *initial_pos) {
+    openFile();
     Item n = {};
 
     int lastId = 0;
     while (1) {
         char a[LINE_MAX_LEN + 1];
-        if (fgetpos(fp, pos) == 0) {
+        if (fgetpos(fp, initial_pos) == 0) {
             ENABLE_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
@@ -97,13 +103,14 @@ static Item findItemById(int id, fpos_t *pos) {
     return n;
 }
 
-static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *pos) {
+static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
+    openFile();
     Item n = {};
 
     int lastId = 0;
     while (1) {
-        char a[NAME_LEN + 1];
-        if (fgetpos(fp, pos) == 0) {
+        char a[LINE_MAX_LEN + 1];
+        if (fgetpos(fp, initial_pos) == 0) {
             ENABLE_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
@@ -138,6 +145,90 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *pos) {
     }
 
     return n;
+}
+
+static void createItem(Item item) {
+    openFile();
+    fseek(fp, -LINE_MAX_LEN, SEEK_END);
+
+    char a[LINE_MAX_LEN + 1];
+    fgets(a, LINE_MAX_LEN + 1, fp);
+    ENABLE_LOGS && printf("o que tem: %s\n", a);
+
+    char *token = strtok(a, DELIMITERS);
+    Item n = processTokens(token);
+
+    char newItem[LINE_MAX_LEN];
+    sprintf(newItem, "%d,%s,%d,%.2f", item.id, item.name, item.quantity, item.price);
+
+    if (strlen(newItem) < LINE_MAX_LEN) {
+        /*
+         * The existence of this logic is because the need to remove all characters of the string... Example:
+         * Banana have length of 6, apple have 5. If we write apple in the line of banana the result would be 'applea'
+         * Note that the 'a' came from the banana so we need make the newLine at least the same side as before edit
+        */
+        while (((LINE_MAX_LEN - 2) - strlen(newItem)) > 0) {
+            strcat(newItem, " ");
+        }
+    }
+
+    strcat(newItem, ";\n");
+    if (strlen(newItem) != 100) {
+        printf("Line is longer or less than 100 digits: %lu", strlen(newItem));
+    }
+    fputs(newItem, fp);
+}
+
+/*
+ * This thing, is that type of thing that you made and work, but you don't know how
+ * initial_pos: The beginner possition of the file you want to delete
+ * final_pos: The start of the next line
+ */
+static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
+    char tmpFileName[11] = "db-tmp.txt";
+    FILE *fp2 = fopen(tmpFileName, "w+");
+
+    if (fp2 == NULL) {
+        printf("Temp file didn't open correctly");
+        return 0;
+    }
+
+    fpos_t tmp_pos, tmp2_pos;
+    fseek(fp, 0L, SEEK_SET);
+    fgetpos(fp2, &tmp_pos);
+
+    int end = initial_pos.__pos;
+    while (tmp_pos.__pos < end) {
+        char a[LINE_MAX_LEN + 1];
+        fgets(a, LINE_MAX_LEN + 1, fp);
+        fputs(a, fp2);
+        fgetpos(fp2, &tmp_pos);
+    }
+
+
+    fseek(fp, 0L, SEEK_END);
+    fgetpos(fp, &tmp2_pos); // posição final do arquivo
+
+    end = tmp2_pos.__pos;
+    fsetpos(fp, final_pos);
+
+    while (tmp_pos.__pos < end - LINE_MAX_LEN) {
+        char a[LINE_MAX_LEN + 1];
+        fgets(a, LINE_MAX_LEN + 1, fp);
+        fputs(a, fp2);
+        fgetpos(fp2, &tmp_pos);
+    }
+
+    if (remove(DB_PATH)) {
+        perror("cannot remove database");
+        return 1;
+    }
+    if (rename(tmpFileName, DB_PATH)) {
+        perror("cannot rename database");
+        return 1;
+    }
+
+    return 0;
 }
 
 static void editLine(Item n, const fpos_t *initial_pos) {
@@ -193,20 +284,25 @@ static Item getAllItem(int page) {
 
 
 int main(void) {
-    if (!openFile()) {
+    if (!openFile(fp, DB_PATH)) {
         return EXIT_FAILURE;
     };
 
-    getAllItem(1);
-
-
-
+    Item n = {
+        10, "melancia", 10, 19.40f
+    };
+    createItem(n);
+    // fpos_t initial_pos, final_pos;
+    // Item item = findItemById(2, &initial_pos);
+    // fgetpos(fp, &final_pos);
+    // deleteItem(initial_pos, &final_pos);
 
     closeFile();
 }
 
 
 //todo: logica para pegar todos os items
+// getAllItem(1);
 // for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
 //     Item item = itens[i];
 //     if (item.id == 0) {
