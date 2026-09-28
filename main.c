@@ -9,7 +9,8 @@
 #define NAME_LEN 60
 #define DELIMITERS ","
 #define MAX_ITEM_PER_PAGE 20
-#define ENABLE_LOGS 0
+#define ENABLE_DEBUG_LOGS 0
+#define SYS_VERSION "0.0.1"
 FILE *fp;
 
 typedef struct {
@@ -19,8 +20,27 @@ typedef struct {
     float price;
 } Item;
 
+static enum {
+    HOME_SCREEN,
+    EDIT_SCREEN,
+    DELETE_SCREEN,
+    SEARCH_SCREEN,
+    EXIT_SCREEN
+} Screen;
+
+static enum {
+    EDIT_ITEM,
+    FIND_ITEM,
+    DELETE_ITEM,
+    RETURN_PAGE,
+    NEXT_PAGE,
+    EXIT_PROGRAM
+} Actions;
+
 
 static Item itens[MAX_ITEM_PER_PAGE];
+static int lastReadIndex = 0;
+static int fulledPage = 0;
 
 static int openFile() {
     if (fp != NULL) {
@@ -47,7 +67,7 @@ static Item processTokens(char *token) {
     Item n;
     int i = 0;
     while (token != NULL && i < 4) {
-        ENABLE_LOGS && printf("Token encontrado: %s\n", token);
+        ENABLE_DEBUG_LOGS && printf("Token encontrado: %s\n", token);
 
         switch (i++) {
             case 0: {
@@ -83,10 +103,10 @@ static Item findItemById(int id, fpos_t *initial_pos) {
     while (1) {
         char a[LINE_MAX_LEN + 1];
         if (fgetpos(fp, initial_pos) == 0) {
-            ENABLE_LOGS && printf("Current position of file pointer found\n");
+            ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
-        ENABLE_LOGS && printf("o que tem: %s\n", a);
+        ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
 
         char *token = strtok(a, DELIMITERS);
         n = processTokens(token);
@@ -111,10 +131,10 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
     while (1) {
         char a[LINE_MAX_LEN + 1];
         if (fgetpos(fp, initial_pos) == 0) {
-            ENABLE_LOGS && printf("Current position of file pointer found\n");
+            ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
-        ENABLE_LOGS && printf("o que tem: %s\n", a);
+        ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
 
         char *token = strtok(a, DELIMITERS);
         n = processTokens(token);
@@ -153,7 +173,7 @@ static void createItem(Item item) {
 
     char a[LINE_MAX_LEN + 1];
     fgets(a, LINE_MAX_LEN + 1, fp);
-    ENABLE_LOGS && printf("o que tem: %s\n", a);
+    ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
 
     char *token = strtok(a, DELIMITERS);
     Item n = processTokens(token);
@@ -234,7 +254,7 @@ static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
 static void editLine(Item n, const fpos_t *initial_pos) {
     fpos_t final_pos;
     if (fgetpos(fp, &final_pos) == 0) {
-        ENABLE_LOGS && printf("Current position of file pointer found\n");
+        ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
     }
     char newItem[LINE_MAX_LEN];
     sprintf(newItem, "%d,%s,%d,%.2f", n.id, n.name, n.quantity, n.price);
@@ -266,6 +286,9 @@ static void clearPreviousItems() {
 }
 
 static Item getAllItem(int page) {
+    if (lastReadIndex == page) {
+        return *itens;
+    }
     clearPreviousItems();
     int startId = (MAX_ITEM_PER_PAGE * page) - MAX_ITEM_PER_PAGE;
     for (int i = 0; i <= MAX_ITEM_PER_PAGE; i++) {
@@ -273,7 +296,7 @@ static Item getAllItem(int page) {
         Item item = findItemById(startId + (i + 1), &pos);
 
         if (item.id == -2) {
-            printf("Collected all the items");
+            ENABLE_DEBUG_LOGS && printf("Collected all the items");
             break;
         }
         itens[i] = item;
@@ -282,35 +305,103 @@ static Item getAllItem(int page) {
     return *itens;
 }
 
+static void clean_scream() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
+
+//todo: conseguindo limpar, o console, deixar isso em loop, toda função deve estar preparada para ser o mais eficiente
+static void printDefaultScreen(int page) {
+    clean_scream();
+    printf("\t\t\tStock System v%s\n", SYS_VERSION);
+
+    getAllItem(page);
+    printf("\t\t   id | Quantity | Price   | Name\n");
+    fulledPage = 1;
+    for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
+        Item item = itens[i];
+        if (item.id == 0) {
+            ENABLE_DEBUG_LOGS && printf("No items left");
+            fulledPage = 0;
+
+            break;
+        }
+        printf("\t\t%5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+    }
+}
 
 int main(void) {
     if (!openFile(fp, DB_PATH)) {
         return EXIT_FAILURE;
     };
 
-    Item n = {
-        10, "melancia", 10, 19.40f
-    };
-    createItem(n);
-    // fpos_t initial_pos, final_pos;
-    // Item item = findItemById(2, &initial_pos);
-    // fgetpos(fp, &final_pos);
-    // deleteItem(initial_pos, &final_pos);
+    int run_program = 0;
+    int page = 1;
+    int action = 0;
+    do {
+        switch (Screen) {
+            case HOME_SCREEN: {
+                printDefaultScreen(page);
+                break;
+            }
+            case EDIT_SCREEN: {
+                printDefaultScreen(page);
+                break;
+            }
+            case DELETE_SCREEN: {
+                printDefaultScreen(page);
+                break;
+            }
+            case SEARCH_SCREEN: {
+                printDefaultScreen(page);
+                break;
+            }
+            case EXIT_SCREEN: {
+                run_program = 0;
+                break ;
+            }
+            default: printDefaultScreen(page);
+        }
+        printf("[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit",
+               EDIT_ITEM, FIND_ITEM, DELETE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
 
-    closeFile();
+        while (1) {
+            scanf("%d", &Actions);
+            switch (action) {
+                case EDIT_ITEM: {
+                }
+                case FIND_ITEM: {
+                }
+                case DELETE_ITEM: {
+                }
+                case RETURN_PAGE: {
+                    if (page > 1) {
+                        page--;
+                    }
+                }
+                case NEXT_PAGE: {
+                    if (fulledPage) {
+                        page++;
+                    }
+                }
+                case EXIT_PROGRAM: {
+                    Screen = EXIT_PROGRAM;
+                }
+                default: {
+                    // User sent an invalid number, should not change state because this could affect user experience
+                }
+            }
+        }
+    } while (run_program);
 }
 
 
 //todo: logica para pegar todos os items
 // getAllItem(1);
-// for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
-//     Item item = itens[i];
-//     if (item.id == 0) {
-//         printf("No items left");
-//         break;
-//     }
-//     printf("Id: %d | Name: %s | Quantity: %d | Price: %.2f\n", item.id, item.name, item.quantity, item.price);
-// }
+
 
 //todo: logica para editar um item
 //    // fpos_t initial_pos;
@@ -320,3 +411,15 @@ int main(void) {
 // item.quantity = item.quantity + 10000;
 //
 // editLine(item, &initial_pos);
+//
+
+// Item n = {
+//     10, "melancia", 10, 19.40f
+// };
+// createItem(n);
+// // fpos_t initial_pos, final_pos;
+// // Item item = findItemById(2, &initial_pos);
+// // fgetpos(fp, &final_pos);
+// // deleteItem(initial_pos, &final_pos);
+//
+// closeFile();
