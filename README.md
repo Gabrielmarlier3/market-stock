@@ -11,7 +11,7 @@ Bibliografia
 
 https://www.ibm.com/docs/en/i/7.4.0
 https://cppreference.com/
-
+https://www.geeksforgeeks.org/c/clear-console-c-language/
 
 Livros 
 
