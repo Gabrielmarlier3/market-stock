@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include<unistd.h>
 
+//todo: Remove all the fucking scanf this shit is horrible
+////todo: define a good project pad
 //todo: debug only, this need came from .env
 #define DB_PATH "/home/gabriel/repositorios/loja_do_marcos/db.txt"
 #define LINE_MAX_LEN 100
@@ -99,7 +101,7 @@ static Item processTokens(char *token) {
     return n;
 }
 
-static Item findItemById(int id, fpos_t *initial_pos) {
+static Item findItemById(int id, fpos_t *initial_pos, fpos_t *end_pos) {
     openFile();
     Item n = {};
 
@@ -125,6 +127,9 @@ static Item findItemById(int id, fpos_t *initial_pos) {
         }
     }
 
+    if (end_pos != NULL && fgetpos(fp, end_pos) == 0) {
+        ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
+    }
     closeFile();
     return n;
 }
@@ -212,6 +217,7 @@ static void createItem(Item item) {
  * final_pos: The start of the next line
  */
 static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
+    openFile();
     char tmpFileName[11] = "db-tmp.txt";
     FILE *fp2 = fopen(tmpFileName, "w+");
 
@@ -246,19 +252,24 @@ static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
         fgetpos(fp2, &tmp_pos);
     }
 
+
     if (remove(DB_PATH)) {
         perror("cannot remove database");
+        closeFile();
         return 1;
     }
     if (rename(tmpFileName, DB_PATH)) {
         perror("cannot rename database");
+        closeFile();
         return 1;
     }
 
+    closeFile();
     return 0;
 }
 
 static void editLine(Item n, const fpos_t *initial_pos) {
+    openFile();
     fpos_t final_pos;
     if (fgetpos(fp, &final_pos) == 0) {
         ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
@@ -283,6 +294,7 @@ static void editLine(Item n, const fpos_t *initial_pos) {
         printf("Line is longer or less than 100 digits: %lu", strlen(newItem));
     }
     fputs(newItem, fp);
+    closeFile();
 }
 
 static void clearPreviousItems() {
@@ -300,7 +312,7 @@ static Item getAllItem(int page) {
     int startId = (MAX_ITEM_PER_PAGE * page) - MAX_ITEM_PER_PAGE;
     for (int i = 0; i <= MAX_ITEM_PER_PAGE; i++) {
         fpos_t pos;
-        Item item = findItemById(startId + (i + 1), &pos);
+        Item item = findItemById(startId + (i + 1), &pos, NULL);
 
         if (item.id == -2) {
             ENABLE_DEBUG_LOGS && printf("Collected all the items");
@@ -320,6 +332,17 @@ static void clean_screen() {
     // for some reason "clear" was not working so i found this way.
     printf("\033[H\033[J");
 #endif
+}
+
+//todo: this shit need validate what kind of returning the user sent just in case...
+static void getEntry(char *buffer, int bufferSize) {
+    int i = 0;
+
+    for (int ch; (i < bufferSize) && ((ch = getc(stdin)) != EOF) && (ch != '\n'); ++i) {
+        buffer[i] = ch;
+    }
+
+    buffer[i] = '\0'; /* a string should always end with '\0' ! */
 }
 
 static void printDefaultScreen(int page) {
@@ -363,21 +386,80 @@ static void printEditSceen(int page) {
         }
 
         if (action == 1) {
+            int bufferSize = NAME_LEN + 1;
+            char buffer[bufferSize];
             int itemId = 0;
+            fpos_t init_pos, end_pos;
             printf("Item Id: ");
             scanf("%d", &itemId);
+            getc(stdin); // just to clear the '/n' character
 
-            Item newItem, item = findItemById(itemId, NULL);
+            Item newItem, item = findItemById(itemId, &init_pos, &end_pos);
+
             if (item.id == -2) {
                 printf("Item not found, try again with other number ou name\n");
                 sleep(3);
                 continue;
             }
+            newItem.id = item.id;
             printf("leave blank to keep\n");
             printf("Name (%s): ", item.name);
-            //todo: detect /n from the stdin and than skip
-            scanf("%s", newItem.name);
+            getEntry(buffer, bufferSize);
+            if (buffer[0] == '\0') {
+                int i = 0;
+                for (; i < strlen(item.name) && (item.name[i] != '\n' || item.name[i] != '\0'); i++) {
+                    newItem.name[i] = item.name[i];
+                }
+                newItem.name[i + 1] = '\0';
+            } else {
+                int i = 0;
+                for (; i < strlen(buffer) && (buffer[i] != '\n' || buffer[i] != '\0'); i++) {
+                    newItem.name[i] = buffer[i];
+                }
+                newItem.name[i] = '\0';
+            }
+
             printf("Quantity (%d): ", item.quantity);
+            getEntry(buffer, bufferSize);
+            if (buffer[0] == '\0') {
+                newItem.quantity = item.quantity;
+            } else {
+                char *remaining;
+                newItem.quantity = strtol(buffer, &remaining, 10);
+            }
+            printf("Price (%.2f): ", item.price);
+            getEntry(buffer, bufferSize);
+            if (buffer[0] == '\0') {
+                newItem.price = item.price;
+            } else {
+                char *remaining;
+                newItem.price = strtof(buffer, &remaining);
+            }
+
+
+            printf("old item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+            printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
+
+            int validResponse = 1;
+            do {
+                printf("You are sure about change the content \n[0] No \n[1] Yes \nAnswer: ");
+                getEntry(buffer, bufferSize);
+                if (buffer[0] != '\0') {
+                    char *remaining;
+                    int resp = strtol(buffer, &remaining, 10);
+                    if (resp < 0 || resp > 1) {
+                        validResponse = 0;
+                    } else if (resp) {
+                        if (newItem.quantity <= 0) {
+                            deleteItem(init_pos, &end_pos);
+                        }
+                        editLine(newItem, &init_pos);
+                    } else {
+                        break;
+                    }
+                }
+            } while (!validResponse);
+            break;
         }
     } while (1);
 }
@@ -398,6 +480,7 @@ int main(void) {
             }
             case EDIT_SCREEN: {
                 printEditSceen(page);
+                printHomeScreen(page);
                 break;
             }
             case DELETE_SCREEN: {
@@ -413,6 +496,9 @@ int main(void) {
                 break ;
             }
             default: printDefaultScreen(page);
+        }
+        if (run_program == 0) {
+            continue;
         }
         printf(
             "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
@@ -447,7 +533,7 @@ int main(void) {
                     break;
                 }
                 case EXIT_PROGRAM: {
-                    Screen = EXIT_PROGRAM;
+                    Screen = EXIT_SCREEN;
                     break;
                 }
                 default: {
