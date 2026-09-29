@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include<unistd.h>
 
 //todo: debug only, this need came from .env
 #define DB_PATH "/home/gabriel/repositorios/loja_do_marcos/db.txt"
@@ -41,10 +42,12 @@ static enum {
 static Item itens[MAX_ITEM_PER_PAGE];
 static int lastReadIndex = 0;
 static int fulledPage = 0;
+static int closedFile = 0;
 
 static int openFile() {
-    if (fp != NULL) {
+    if (!closedFile && fp != NULL) {
         fseek(fp, 0L, SEEK_SET);
+        closedFile = 0;
         return 1;
     }
 
@@ -61,6 +64,7 @@ static void closeFile() {
     if (fclose(fp) != 0) {
         printf("File didn't close correctly");
     }
+    closedFile = 1;
 }
 
 static Item processTokens(char *token) {
@@ -102,7 +106,7 @@ static Item findItemById(int id, fpos_t *initial_pos) {
     int lastId = 0;
     while (1) {
         char a[LINE_MAX_LEN + 1];
-        if (fgetpos(fp, initial_pos) == 0) {
+        if (initial_pos != NULL && fgetpos(fp, initial_pos) == 0) {
             ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
@@ -112,6 +116,7 @@ static Item findItemById(int id, fpos_t *initial_pos) {
         n = processTokens(token);
         if (lastId == n.id) {
             n.id = -2;
+            closeFile();
             return n;
         }
         lastId = n.id;
@@ -120,6 +125,7 @@ static Item findItemById(int id, fpos_t *initial_pos) {
         }
     }
 
+    closeFile();
     return n;
 }
 
@@ -130,7 +136,7 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
     int lastId = 0;
     while (1) {
         char a[LINE_MAX_LEN + 1];
-        if (fgetpos(fp, initial_pos) == 0) {
+        if (initial_pos != NULL && fgetpos(fp, initial_pos) == 0) {
             ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
         }
         fgets(a, LINE_MAX_LEN + 1, fp);
@@ -141,6 +147,7 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
 
         if (lastId == n.id) {
             n.id = -2;
+            closeFile();
             return n;
         }
         lastId = n.id;
@@ -163,7 +170,7 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
 
         break;
     }
-
+    closeFile();
     return n;
 }
 
@@ -201,7 +208,7 @@ static void createItem(Item item) {
 
 /*
  * This thing, is that type of thing that you made and work, but you don't know how
- * initial_pos: The beginner possition of the file you want to delete
+ * initial_pos: The beginner position of the file you want to delete
  * final_pos: The start of the next line
  */
 static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
@@ -305,17 +312,18 @@ static Item getAllItem(int page) {
     return *itens;
 }
 
-static void clean_scream() {
+static void clean_screen() {
 #ifdef _WIN32
     system("cls");
 #else
-    system("clear");
+    // system("clear");
+    // for some reason "clear" was not working so i found this way.
+    printf("\033[H\033[J");
 #endif
 }
 
-//todo: conseguindo limpar, o console, deixar isso em loop, toda função deve estar preparada para ser o mais eficiente
 static void printDefaultScreen(int page) {
-    clean_scream();
+    clean_screen();
     printf("\t\t\tStock System v%s\n", SYS_VERSION);
 
     getAllItem(page);
@@ -333,22 +341,63 @@ static void printDefaultScreen(int page) {
     }
 }
 
+static void printHomeScreen(int page) {
+    printDefaultScreen(page);
+};
+
+static void printEditSceen(int page) {
+    do {
+        clean_screen();
+        printDefaultScreen(page);
+        int action =
+                printf("What kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ");
+        scanf("%d", &action);
+
+        if (action < 1 && action > 3) {
+            printf("Invalid action, choose a number between 1 and 2");
+            sleep(3);
+            continue;
+        }
+        if (action == 3) {
+            break;
+        }
+
+        if (action == 1) {
+            int itemId = 0;
+            printf("Item Id: ");
+            scanf("%d", &itemId);
+
+            Item newItem, item = findItemById(itemId, NULL);
+            if (item.id == -2) {
+                printf("Item not found, try again with other number ou name\n");
+                sleep(3);
+                continue;
+            }
+            printf("leave blank to keep\n");
+            printf("Name (%s): ", item.name);
+            //todo: detect /n from the stdin and than skip
+            scanf("%s", newItem.name);
+            printf("Quantity (%d): ", item.quantity);
+        }
+    } while (1);
+}
+
 int main(void) {
     if (!openFile(fp, DB_PATH)) {
         return EXIT_FAILURE;
     };
 
-    int run_program = 0;
+    int run_program = 1;
     int page = 1;
-    int action = 0;
+
     do {
         switch (Screen) {
             case HOME_SCREEN: {
-                printDefaultScreen(page);
+                printHomeScreen(page);
                 break;
             }
             case EDIT_SCREEN: {
-                printDefaultScreen(page);
+                printEditSceen(page);
                 break;
             }
             case DELETE_SCREEN: {
@@ -365,34 +414,49 @@ int main(void) {
             }
             default: printDefaultScreen(page);
         }
-        printf("[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit",
-               EDIT_ITEM, FIND_ITEM, DELETE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
+        printf(
+            "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
+            EDIT_ITEM, FIND_ITEM, DELETE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
 
         while (1) {
+            int action_choose = 1;
             scanf("%d", &Actions);
-            switch (action) {
+            switch (Actions) {
                 case EDIT_ITEM: {
+                    Screen = EDIT_SCREEN;
+                    break;
                 }
                 case FIND_ITEM: {
+                    Screen = SEARCH_SCREEN;
+                    break;
                 }
                 case DELETE_ITEM: {
+                    Screen = DELETE_SCREEN;
+                    break;
                 }
                 case RETURN_PAGE: {
                     if (page > 1) {
                         page--;
                     }
+                    break;
                 }
                 case NEXT_PAGE: {
                     if (fulledPage) {
                         page++;
                     }
+                    break;
                 }
                 case EXIT_PROGRAM: {
                     Screen = EXIT_PROGRAM;
+                    break;
                 }
                 default: {
+                    action_choose = 0;
                     // User sent an invalid number, should not change state because this could affect user experience
                 }
+            }
+            if (action_choose) {
+                break;
             }
         }
     } while (run_program);
