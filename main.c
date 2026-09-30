@@ -45,11 +45,11 @@ static Item itens[MAX_ITEM_PER_PAGE];
 static int lastReadIndex = 0;
 static int fulledPage = 0;
 static int closedFile = 0;
+static int lastItemId = 0;
 
 static int openFile() {
     if (!closedFile && fp != NULL) {
         fseek(fp, 0L, SEEK_SET);
-        closedFile = 0;
         return 1;
     }
 
@@ -59,6 +59,7 @@ static int openFile() {
         printf("File didn't open correctly");
         return 0;
     }
+    closedFile = 0;
     return 1;
 }
 
@@ -68,6 +69,7 @@ static void closeFile() {
     }
     closedFile = 1;
 }
+
 
 static Item processTokens(char *token) {
     Item n;
@@ -99,6 +101,27 @@ static Item processTokens(char *token) {
         token = strtok(NULL, DELIMITERS);
     }
     return n;
+}
+
+static void getLastItemId() {
+    openFile();
+
+    fpos_t temp;
+    fgetpos(fp, &temp);
+
+    fseek(fp, -LINE_MAX_LEN,SEEK_END);
+
+    char a[LINE_MAX_LEN + 1];
+
+    fgets(a, LINE_MAX_LEN + 1, fp);
+    ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
+
+    char *token = strtok(a, DELIMITERS);
+
+    Item n = processTokens(token);
+    lastItemId = n.id;
+
+    fsetpos(fp, &temp);
 }
 
 static Item findItemById(int id, fpos_t *initial_pos, fpos_t *end_pos) {
@@ -134,7 +157,7 @@ static Item findItemById(int id, fpos_t *initial_pos, fpos_t *end_pos) {
     return n;
 }
 
-static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
+static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos, fpos_t *end_pos) {
     openFile();
     Item n = {};
 
@@ -175,6 +198,10 @@ static Item findItemByName(const char name[NAME_LEN + 1], fpos_t *initial_pos) {
 
         break;
     }
+    if (end_pos != NULL && fgetpos(fp, end_pos) == 0) {
+        ENABLE_DEBUG_LOGS && printf("Current position of file pointer found\n");
+    }
+
     closeFile();
     return n;
 }
@@ -187,11 +214,9 @@ static void createItem(Item item) {
     fgets(a, LINE_MAX_LEN + 1, fp);
     ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
 
-    char *token = strtok(a, DELIMITERS);
-    Item n = processTokens(token);
-
     char newItem[LINE_MAX_LEN];
-    sprintf(newItem, "%d,%s,%d,%.2f", item.id, item.name, item.quantity, item.price);
+    getLastItemId();
+    sprintf(newItem, "%d,%s,%d,%.2f", lastItemId + 1, item.name, item.quantity, item.price);
 
     if (strlen(newItem) < LINE_MAX_LEN) {
         /*
@@ -229,35 +254,42 @@ static int deleteItem(const fpos_t initial_pos, const fpos_t *final_pos) {
     fpos_t tmp_pos, tmp2_pos;
     fseek(fp, 0L, SEEK_SET);
     fgetpos(fp2, &tmp_pos);
-
+    // Here I am at position 0 of the file, the idea is, copy everything here till the line we want exclude.
     int end = initial_pos.__pos;
     while (tmp_pos.__pos < end) {
         char a[LINE_MAX_LEN + 1];
         fgets(a, LINE_MAX_LEN + 1, fp);
         fputs(a, fp2);
         fgetpos(fp2, &tmp_pos);
+        fflush(fp2);
     }
 
 
     fseek(fp, 0L, SEEK_END);
-    fgetpos(fp, &tmp2_pos); // posição final do arquivo
+    fgetpos(fp, &tmp2_pos);
 
     end = tmp2_pos.__pos;
     fsetpos(fp, final_pos);
 
+    // Now here, we skip the line we want exclude, and start copying everything till the end. That way we "exclude" the line
     while (tmp_pos.__pos < end - LINE_MAX_LEN) {
         char a[LINE_MAX_LEN + 1];
         fgets(a, LINE_MAX_LEN + 1, fp);
         fputs(a, fp2);
         fgetpos(fp2, &tmp_pos);
+        fflush(fp2);
     }
 
+    // Need this, because without the "db-tmp.txt" will be empty
+    fflush(fp2);
 
+    // deletes the original database
     if (remove(DB_PATH)) {
         perror("cannot remove database");
         closeFile();
         return 1;
     }
+    // the pass the tmpFile to became the new database.
     if (rename(tmpFileName, DB_PATH)) {
         perror("cannot rename database");
         closeFile();
@@ -310,11 +342,18 @@ static Item getAllItem(int page) {
     }
     clearPreviousItems();
     int startId = (MAX_ITEM_PER_PAGE * page) - MAX_ITEM_PER_PAGE;
-    for (int i = 0; i <= MAX_ITEM_PER_PAGE; i++) {
-        fpos_t pos;
-        Item item = findItemById(startId + (i + 1), &pos, NULL);
+
+    int off = 0;
+    for (int i = 0; i < MAX_ITEM_PER_PAGE; i++) {
+        Item item = findItemById(startId + (i + 1) + off, NULL, NULL);
 
         if (item.id == -2) {
+            getLastItemId();
+            if (startId + (i + 1) < lastItemId) {
+                i--;
+                off++;
+                continue;
+            }
             ENABLE_DEBUG_LOGS && printf("Collected all the items");
             break;
         }
@@ -376,6 +415,7 @@ static void printEditSceen(int page) {
                 printf("What kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ");
         scanf("%d", &action);
 
+        // Grant that the number is what we need.
         if (action < 1 && action > 3) {
             printf("Invalid action, choose a number between 1 and 2");
             sleep(3);
@@ -385,82 +425,93 @@ static void printEditSceen(int page) {
             break;
         }
 
+        Item newItem, item;
+        int bufferSize = NAME_LEN + 1;
+        char buffer[bufferSize];
+        fpos_t init_pos, end_pos;
         if (action == 1) {
-            int bufferSize = NAME_LEN + 1;
-            char buffer[bufferSize];
             int itemId = 0;
-            fpos_t init_pos, end_pos;
             printf("Item Id: ");
             scanf("%d", &itemId);
             getc(stdin); // just to clear the '/n' character
 
-            Item newItem, item = findItemById(itemId, &init_pos, &end_pos);
+            item = findItemById(itemId, &init_pos, &end_pos);
 
             if (item.id == -2) {
-                printf("Item not found, try again with other number ou name\n");
+                printf("Item not found, try again with other id ou name\n");
                 sleep(3);
                 continue;
             }
-            newItem.id = item.id;
-            printf("leave blank to keep\n");
-            printf("Name (%s): ", item.name);
-            getEntry(buffer, bufferSize);
-            if (buffer[0] == '\0') {
-                int i = 0;
-                for (; i < strlen(item.name) && (item.name[i] != '\n' || item.name[i] != '\0'); i++) {
-                    newItem.name[i] = item.name[i];
-                }
-                newItem.name[i + 1] = '\0';
-            } else {
-                int i = 0;
-                for (; i < strlen(buffer) && (buffer[i] != '\n' || buffer[i] != '\0'); i++) {
-                    newItem.name[i] = buffer[i];
-                }
-                newItem.name[i] = '\0';
+        } else {
+            char itemName[NAME_LEN + 1];
+            printf("Item Name: ");
+            scanf("%s", &itemName);
+            getc(stdin); // just to clear the '/n' character
+            item = findItemByName(itemName, &init_pos, &end_pos);
+            if (item.id == -2) {
+                printf("Item not found, try again with other id ou name\n");
+                sleep(3);
+                continue;
             }
-
-            printf("Quantity (%d): ", item.quantity);
-            getEntry(buffer, bufferSize);
-            if (buffer[0] == '\0') {
-                newItem.quantity = item.quantity;
-            } else {
-                char *remaining;
-                newItem.quantity = strtol(buffer, &remaining, 10);
-            }
-            printf("Price (%.2f): ", item.price);
-            getEntry(buffer, bufferSize);
-            if (buffer[0] == '\0') {
-                newItem.price = item.price;
-            } else {
-                char *remaining;
-                newItem.price = strtof(buffer, &remaining);
-            }
-
-
-            printf("old item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
-            printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
-
-            int validResponse = 1;
-            do {
-                printf("You are sure about change the content \n[0] No \n[1] Yes \nAnswer: ");
-                getEntry(buffer, bufferSize);
-                if (buffer[0] != '\0') {
-                    char *remaining;
-                    int resp = strtol(buffer, &remaining, 10);
-                    if (resp < 0 || resp > 1) {
-                        validResponse = 0;
-                    } else if (resp) {
-                        if (newItem.quantity <= 0) {
-                            deleteItem(init_pos, &end_pos);
-                        }
-                        editLine(newItem, &init_pos);
-                    } else {
-                        break;
-                    }
-                }
-            } while (!validResponse);
-            break;
         }
+        clean_screen();
+        newItem.id = item.id;
+        printf("leave blank to keep\n");
+        printf("Name (%s): ", item.name);
+        getEntry(buffer, bufferSize);
+        int i = 0;
+        if (buffer[0] == '\0') {
+            for (; i < strlen(item.name) && (item.name[i] != '\n' || item.name[i] != '\0'); i++) {
+                newItem.name[i] = item.name[i];
+            }
+        } else {
+            for (; i < strlen(buffer) && (buffer[i] != '\n' || buffer[i] != '\0'); i++) {
+                newItem.name[i] = buffer[i];
+            }
+        }
+        newItem.name[i] = '\0';
+        printf("Quantity (%d): ", item.quantity);
+        getEntry(buffer, bufferSize);
+        if (buffer[0] == '\0') {
+            newItem.quantity = item.quantity;
+        } else {
+            char *remaining;
+            newItem.quantity = strtol(buffer, &remaining, 10);
+        }
+        printf("Price (%.2f): ", item.price);
+        getEntry(buffer, bufferSize);
+        if (buffer[0] == '\0') {
+            newItem.price = item.price;
+        } else {
+            char *remaining;
+            newItem.price = strtof(buffer, &remaining);
+        }
+
+        printf("             id | quantity |  price  | name\n");
+        printf("old item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+        printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
+
+        int validResponse = 1;
+        do {
+            printf("You are sure about change the content \n[0] No \n[1] Yes \nAnswer: ");
+            getEntry(buffer, bufferSize);
+            if (buffer[0] != '\0') {
+                char *remaining;
+                int resp = strtol(buffer, &remaining, 10);
+                if (resp < 0 || resp > 1) {
+                    validResponse = 0;
+                } else if (resp) {
+                    if (newItem.quantity <= 0) {
+                        deleteItem(init_pos, &end_pos);
+                    } else {
+                        editLine(newItem, &init_pos);
+                    }
+                } else {
+                    break;
+                }
+            }
+        } while (!validResponse);
+        break;
     } while (1);
 }
 
@@ -481,14 +532,19 @@ int main(void) {
             case EDIT_SCREEN: {
                 printEditSceen(page);
                 printHomeScreen(page);
+                Screen = HOME_SCREEN;
                 break;
             }
             case DELETE_SCREEN: {
                 printDefaultScreen(page);
+                printHomeScreen(page);
+                Screen = HOME_SCREEN;
                 break;
             }
             case SEARCH_SCREEN: {
                 printDefaultScreen(page);
+                printHomeScreen(page);
+                Screen = HOME_SCREEN;
                 break;
             }
             case EXIT_SCREEN: {
