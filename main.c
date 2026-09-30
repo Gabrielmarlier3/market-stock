@@ -70,7 +70,6 @@ static void closeFile() {
     closedFile = 1;
 }
 
-
 static Item processTokens(char *token) {
     Item n;
     int i = 0;
@@ -407,35 +406,30 @@ static void printHomeScreen(int page) {
     printDefaultScreen(page);
 };
 
-static void printEditSceen(int page) {
+static Item findItem(fpos_t *init_pos, fpos_t *end_pos) {
+    Item item;
     do {
-        clean_screen();
-        printDefaultScreen(page);
         int action =
                 printf("What kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ");
         scanf("%d", &action);
 
-        // Grant that the number is what we need.
-        if (action < 1 && action > 3) {
-            printf("Invalid action, choose a number between 1 and 2");
+        if (action < 1 || action > 3) {
+            printf("Invalid action, choose a number between 1 and 2\n");
             sleep(3);
+            clean_screen();
             continue;
         }
         if (action == 3) {
             break;
         }
 
-        Item newItem, item;
-        int bufferSize = NAME_LEN + 1;
-        char buffer[bufferSize];
-        fpos_t init_pos, end_pos;
         if (action == 1) {
             int itemId = 0;
             printf("Item Id: ");
             scanf("%d", &itemId);
             getc(stdin); // just to clear the '/n' character
 
-            item = findItemById(itemId, &init_pos, &end_pos);
+            item = findItemById(itemId, init_pos, end_pos);
 
             if (item.id == -2) {
                 printf("Item not found, try again with other id ou name\n");
@@ -445,24 +439,47 @@ static void printEditSceen(int page) {
         } else {
             char itemName[NAME_LEN + 1];
             printf("Item Name: ");
-            scanf("%s", &itemName);
+            scanf("%s", itemName);
             getc(stdin); // just to clear the '/n' character
-            item = findItemByName(itemName, &init_pos, &end_pos);
+            item = findItemByName(itemName, init_pos, end_pos);
             if (item.id == -2) {
                 printf("Item not found, try again with other id ou name\n");
                 sleep(3);
                 continue;
             }
         }
+        return item;
+    } while (1);
+    item.id = -3;
+    return item;
+}
+
+//sorry about the monstrosity but it works, so... let's keep it!
+static void printEditSceen(int page, const Item *item) {
+    do {
         clean_screen();
-        newItem.id = item.id;
-        printf("leave blank to keep\n");
-        printf("Name (%s): ", item.name);
+        printDefaultScreen(page);
+        int bufferSize = NAME_LEN + 1;
+        char buffer[bufferSize];
+        fpos_t init_pos, end_pos;
+        Item newItem, oldItem;
+        if (item != NULL) {
+            oldItem = *item;
+        } else {
+            oldItem = findItem(&init_pos, &end_pos);
+        }
+        if (oldItem.id == -3) {
+            return;
+        }
+        clean_screen();
+        newItem.id = oldItem.id;
+        printf("Item found, please fill out the form. (leave blank to keep the original)\n");
+        printf("Name (%s): ", oldItem.name);
         getEntry(buffer, bufferSize);
         int i = 0;
         if (buffer[0] == '\0') {
-            for (; i < strlen(item.name) && (item.name[i] != '\n' || item.name[i] != '\0'); i++) {
-                newItem.name[i] = item.name[i];
+            for (; i < strlen(oldItem.name) && (oldItem.name[i] != '\n' || oldItem.name[i] != '\0'); i++) {
+                newItem.name[i] = oldItem.name[i];
             }
         } else {
             for (; i < strlen(buffer) && (buffer[i] != '\n' || buffer[i] != '\0'); i++) {
@@ -470,25 +487,25 @@ static void printEditSceen(int page) {
             }
         }
         newItem.name[i] = '\0';
-        printf("Quantity (%d): ", item.quantity);
+        printf("Quantity (%d): ", oldItem.quantity);
         getEntry(buffer, bufferSize);
         if (buffer[0] == '\0') {
-            newItem.quantity = item.quantity;
+            newItem.quantity = oldItem.quantity;
         } else {
             char *remaining;
             newItem.quantity = strtol(buffer, &remaining, 10);
         }
-        printf("Price (%.2f): ", item.price);
+        printf("Price (%.2f): ", oldItem.price);
         getEntry(buffer, bufferSize);
         if (buffer[0] == '\0') {
-            newItem.price = item.price;
+            newItem.price = oldItem.price;
         } else {
             char *remaining;
             newItem.price = strtof(buffer, &remaining);
         }
 
         printf("             id | quantity |  price  | name\n");
-        printf("old item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+        printf("old item: %5d | %8d | %7.2f | %s \n", oldItem.id, oldItem.quantity, oldItem.price, oldItem.name);
         printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
 
         int validResponse = 1;
@@ -515,6 +532,65 @@ static void printEditSceen(int page) {
     } while (1);
 }
 
+static void printSearchScreen(int page) {
+    clean_screen();
+    Item item = findItem(NULL, NULL);
+
+    if (item.id == -3) {
+        return;
+    }
+    do {
+        int action;
+        clean_screen();
+        printf("         id | quantity |  price  | name\n");
+        printf("item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+        printf("[0] Return [1] Edit - Option: ");
+        scanf("%d", &action);
+        getc(stdin);
+
+        if (action < 0 && action > 1) {
+            printf("Invalid action, choose a number between 0 and 1");
+            sleep(3);
+            continue;
+        }
+        if (action) {
+            printEditSceen(page, &item);
+        }
+        break;
+    } while (1);
+}
+
+static void deleteItemScreen(int page) {
+    clean_screen();
+    fpos_t init_pos, end_pos;
+    Item item = findItem(&init_pos, &end_pos);
+
+    if (item.id == -3) {
+        return;
+    }
+    do {
+        int action;
+        clean_screen();
+        printf("         id | quantity |  price  | name\n");
+        printf("item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
+        printf("Are you sure that you want to exclude this item, the action cannot be undone");
+        printf("[0] No [1] Yes - Option: ");
+        scanf("%d", &action);
+        getc(stdin);
+
+        if (action < 0 && action > 1) {
+            printf("Invalid action, choose a number between 0 and 1");
+            sleep(3);
+            continue;
+        }
+        if (action) {
+            deleteItem(init_pos, &end_pos);
+        }
+        break;
+    } while (1);
+    return;
+}
+
 int main(void) {
     if (!openFile(fp, DB_PATH)) {
         return EXIT_FAILURE;
@@ -530,19 +606,19 @@ int main(void) {
                 break;
             }
             case EDIT_SCREEN: {
-                printEditSceen(page);
+                printEditSceen(page, NULL);
                 printHomeScreen(page);
                 Screen = HOME_SCREEN;
                 break;
             }
             case DELETE_SCREEN: {
-                printDefaultScreen(page);
+                deleteItemScreen(page);
                 printHomeScreen(page);
                 Screen = HOME_SCREEN;
                 break;
             }
             case SEARCH_SCREEN: {
-                printDefaultScreen(page);
+                printSearchScreen(page);
                 printHomeScreen(page);
                 Screen = HOME_SCREEN;
                 break;
@@ -560,44 +636,39 @@ int main(void) {
             "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
             EDIT_ITEM, FIND_ITEM, DELETE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
 
-        while (1) {
-            int action_choose = 1;
-            scanf("%d", &Actions);
-            switch (Actions) {
-                case EDIT_ITEM: {
-                    Screen = EDIT_SCREEN;
-                    break;
-                }
-                case FIND_ITEM: {
-                    Screen = SEARCH_SCREEN;
-                    break;
-                }
-                case DELETE_ITEM: {
-                    Screen = DELETE_SCREEN;
-                    break;
-                }
-                case RETURN_PAGE: {
-                    if (page > 1) {
-                        page--;
-                    }
-                    break;
-                }
-                case NEXT_PAGE: {
-                    if (fulledPage) {
-                        page++;
-                    }
-                    break;
-                }
-                case EXIT_PROGRAM: {
-                    Screen = EXIT_SCREEN;
-                    break;
-                }
-                default: {
-                    action_choose = 0;
-                    // User sent an invalid number, should not change state because this could affect user experience
-                }
+
+        scanf("%d", &Actions);
+        switch (Actions) {
+            case EDIT_ITEM: {
+                Screen = EDIT_SCREEN;
+                break;
             }
-            if (action_choose) {
+            case FIND_ITEM: {
+                Screen = SEARCH_SCREEN;
+                break;
+            }
+            case DELETE_ITEM: {
+                Screen = DELETE_SCREEN;
+                break;
+            }
+            case RETURN_PAGE: {
+                if (page > 1) {
+                    page--;
+                }
+                break;
+            }
+            case NEXT_PAGE: {
+                if (fulledPage) {
+                    page++;
+                }
+                break;
+            }
+            case EXIT_PROGRAM: {
+                Screen = EXIT_SCREEN;
+                break;
+            }
+            default: {
+                Screen = HOME_SCREEN;
                 break;
             }
         }
