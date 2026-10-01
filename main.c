@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 #include<unistd.h>
 
 //todo: Remove all the fucking scanf this shit is horrible
@@ -27,6 +28,7 @@ static enum {
     EDIT_SCREEN,
     DELETE_SCREEN,
     SEARCH_SCREEN,
+    CREATE_SCREEN,
     EXIT_SCREEN
 } Screens;
 
@@ -34,6 +36,7 @@ static enum {
     EDIT_ITEM,
     FIND_ITEM,
     DELETE_ITEM,
+    CREATE_ITEM,
     RETURN_PAGE,
     NEXT_PAGE,
     EXIT_PROGRAM
@@ -65,6 +68,7 @@ static int OpenFile() {
 }
 
 static void CloseFile() {
+    fflush(g_database);
     if (fclose(g_database) != 0) {
         printf("File didn't close correctly");
     }
@@ -208,14 +212,10 @@ static Item FindItemByName(const char NAME[NAME_LEN + 1], fpos_t *p_initialPos, 
 
 static void CreateItem(Item item) {
     OpenFile();
-    fseek(g_database, -LINE_MAX_LEN, SEEK_END);
-
-    char a[LINE_MAX_LEN + 1];
-    fgets(a, LINE_MAX_LEN + 1, g_database);
-    ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
+    GetLastItemId();
+    fseek(g_database, 0L, SEEK_END);
 
     char newItem[LINE_MAX_LEN];
-    GetLastItemId();
     sprintf(newItem, "%d,%s,%d,%.2f", g_lastItemId + 1, item.name, item.quantity, item.price);
 
     if (strlen(newItem) < LINE_MAX_LEN) {
@@ -234,6 +234,8 @@ static void CreateItem(Item item) {
         printf("Line is longer or less than 100 digits: %lu", strlen(newItem));
     }
     fputs(newItem, g_database);
+
+    CloseFile();
 }
 
 /*
@@ -373,7 +375,6 @@ static void CleanScreen() {
 #endif
 }
 
-//todo: this shit need validate what kind of returning the user sent just in case...
 static void GetEntry(char *p_buffer, int bufferSize) {
     int i = 0;
 
@@ -383,6 +384,24 @@ static void GetEntry(char *p_buffer, int bufferSize) {
 
     p_buffer[i] = '\0'; /* a string should always end with '\0' ! */
 }
+
+// DEFAULT_VALUE: the default value of the 'yes or no' question example in 'y/N' the default value is 'N'
+static int GetBoolean(const char DEFAULT_VALUE) {
+    char tempBuffer[2];
+    GetEntry(tempBuffer, 2);
+    const int TEMP_LOWER = tolower(tempBuffer[0]);
+    const int DEFAULT_LOWER = tolower(DEFAULT_VALUE);
+    if (TEMP_LOWER == '\0' || TEMP_LOWER == DEFAULT_LOWER) {
+        return 1;
+    }
+
+    if (TEMP_LOWER != 'y' && TEMP_LOWER != 'n') {
+        return -1;
+    }
+
+    return 0;
+}
+
 
 static void PrintDefaultScreen(int page) {
     CleanScreen();
@@ -407,16 +426,20 @@ static void PrintHomeScreen(int page) {
     PrintDefaultScreen(page);
 };
 
-static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos) {
+static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos, const char PREFIX[NAME_LEN]) {
     Item item;
     do {
+        CleanScreen();
         int action =
-                printf("What kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ");
+                printf(
+                    "%sWhat kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ",
+                    PREFIX);
         scanf("%d", &action);
+        getc(stdin);
 
         if (action < 1 || action > 3) {
             printf("Invalid action, choose a number between 1 and 2\n");
-            sleep(3);
+            sleep(1);
             CleanScreen();
             continue;
         }
@@ -434,7 +457,7 @@ static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos) {
 
             if (item.id == -2) {
                 printf("Item not found, try again with other id ou name\n");
-                sleep(3);
+                sleep(1);
                 continue;
             }
         } else {
@@ -445,7 +468,7 @@ static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos) {
             item = FindItemByName(itemName, p_initPos, p_endPos);
             if (item.id == -2) {
                 printf("Item not found, try again with other id ou name\n");
-                sleep(3);
+                sleep(1);
                 continue;
             }
         }
@@ -467,7 +490,7 @@ static void PrintEditSceen(int page, const Item *p_ITEM) {
         if (p_ITEM != NULL) {
             oldItem = *p_ITEM;
         } else {
-            oldItem = FindItem(&init_pos, &end_pos);
+            oldItem = FindItem(&init_pos, &end_pos, "");
         }
         if (oldItem.id == -3) {
             return;
@@ -510,6 +533,7 @@ static void PrintEditSceen(int page, const Item *p_ITEM) {
         printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
 
         int validResponse = 1;
+        //todo: mordenize this selection
         do {
             printf("You are sure about change the content \n[0] No \n[1] Yes \nAnswer: ");
             GetEntry(buffer, bufferSize);
@@ -520,7 +544,10 @@ static void PrintEditSceen(int page, const Item *p_ITEM) {
                     validResponse = 0;
                 } else if (resp) {
                     if (newItem.quantity <= 0) {
-                        DeleteItem(init_pos, &end_pos);
+                        printf("This item has 0 or less so will be excluded. Proceed? n/Y: ");
+                        if (!GetBoolean('y')) {
+                            DeleteItem(init_pos, &end_pos);
+                        }
                     } else {
                         EditLine(newItem, &init_pos);
                     }
@@ -535,7 +562,7 @@ static void PrintEditSceen(int page, const Item *p_ITEM) {
 
 static void PrintSearchScreen(int page) {
     CleanScreen();
-    Item item = FindItem(NULL, NULL);
+    Item item = FindItem(NULL, NULL, "");
 
     if (item.id == -3) {
         return;
@@ -551,7 +578,7 @@ static void PrintSearchScreen(int page) {
 
         if (action < 0 && action > 1) {
             printf("Invalid action, choose a number between 0 and 1");
-            sleep(3);
+            sleep(1);
             continue;
         }
         if (action) {
@@ -564,7 +591,8 @@ static void PrintSearchScreen(int page) {
 static void DeleteItemScreen() {
     CleanScreen();
     fpos_t init_pos, end_pos;
-    Item item = FindItem(&init_pos, &end_pos);
+    printf("Deleting a Item - ");
+    Item item = FindItem(&init_pos, &end_pos, "DELETING - ");
 
     if (item.id == -3) {
         return;
@@ -574,21 +602,145 @@ static void DeleteItemScreen() {
         CleanScreen();
         printf("         id | quantity |  price  | name\n");
         printf("item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
-        printf("Are you sure that you want to exclude this item, the action cannot be undone");
-        printf("[0] No [1] Yes - Option: ");
-        scanf("%d", &action);
-        getc(stdin);
-
-        if (action < 0 && action > 1) {
-            printf("Invalid action, choose a number between 0 and 1");
-            sleep(3);
-            continue;
-        }
-        if (action) {
+        printf("Are you sure that you want to exclude this item y/N: ");
+        if (!GetBoolean('n')) {
             DeleteItem(init_pos, &end_pos);
         }
         break;
     } while (1);
+}
+
+static void CreateItemScreen() {
+    GetLastItemId();
+    CleanScreen();
+    Item newItem = {
+        .id = g_lastItemId++,
+    };
+    int bufferSize = NAME_LEN + 1, state = 0, skipForm = 0;
+    char buffer[bufferSize];
+    char tempBuffer[2];
+    printf("Creating a new item\n");
+    do {
+        switch (state) {
+            //Name
+            case 0: {
+                printf("Name: ");
+                GetEntry(buffer, bufferSize);
+                int i = 0;
+                if (buffer[0] == '\0') {
+                    printf("No valid value provide, want exit? n/Y");
+                    GetEntry(tempBuffer, 2);
+                    if (tempBuffer[0] == '\0' || (tolower(tempBuffer[0]) == 'y' && tolower(tempBuffer[0]) != 'n')) {
+                        return;
+                    }
+                    continue;
+                }
+                for (; i < strlen(buffer) && (buffer[i] != '\n' || buffer[i] != '\0'); i++) {
+                    newItem.name[i] = buffer[i];
+                }
+                newItem.name[i] = '\0';
+                state++;
+                if (skipForm) { state = INT_MAX; }
+                break;
+            };
+            //Quantity
+            case 1: {
+                printf("Quantity: ");
+                GetEntry(buffer, bufferSize);
+                if (buffer[0] == '\0') {
+                    printf("No valid value provide, want exit? n/Y");
+                    GetEntry(tempBuffer, 2);
+                    if (tempBuffer[0] == '\0' || (tolower(tempBuffer[0]) == 'y' && tolower(tempBuffer[0]) != 'n')) {
+                        return;
+                    }
+                    continue;
+                }
+                char *p_remaining;
+                newItem.quantity = strtol(buffer, &p_remaining, 10);
+                if (newItem.quantity <= 0) {
+                    printf("Invalid quantity (%d), please try again\n", newItem.quantity);
+                    sleep(1);
+                    continue;
+                }
+                state++;
+                if (skipForm) { state = INT_MAX; }
+                break;
+            }
+            //Price
+            case 2: {
+                printf("Price: ");
+                GetEntry(buffer, bufferSize);
+                if (buffer[0] == '\0') {
+                    printf("No valid value provide, want exit? n/Y");
+                    GetEntry(tempBuffer, 2);
+                    if (tempBuffer[0] == '\0' || (tolower(tempBuffer[0]) == 'y' && tolower(tempBuffer[0]) != 'n')) {
+                        return;
+                    }
+                    continue;
+                }
+                char *p_remaining;
+                newItem.price = strtof(buffer, &p_remaining);
+                if (newItem.price <= 0) {
+                    printf("ATTENTION: the price is zero or negative (%.2f), this is intentional y/N?\n",
+                           newItem.price);
+                    if (GetBoolean('n')) {
+                        continue;
+                    }
+                }
+                state++;
+                if (skipForm) { state = INT_MAX; }
+
+                break;
+            }
+        }
+        if (state >= 3) {
+            CleanScreen();
+            printf("         id | quantity |  price  | name\n");
+            printf("item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
+            printf("Want change some item? y/N?: ");
+
+            if (!GetBoolean('n')) {
+                printf("What value do you want to change? [0] Name [1] Quantity [2] Price \nOption: ");
+                GetEntry(tempBuffer, 2);
+                switch (tempBuffer[0]) {
+                    case '\0': {
+                        continue;
+                    };
+                    case '0': {
+                        state = 0;
+                        skipForm = 1;
+                        break;
+                    }
+                    case '1': {
+                        state = 1;
+                        skipForm = 1;
+                        break;
+                    }
+                    case '2': {
+                        state = 2;
+                        skipForm = 1;
+                        break;
+                    }
+                }
+                continue;
+            }
+            skipForm = 0;
+            printf("Do you want to save it to the database? n/Y:");
+            Item item = FindItemByName(newItem.name, NULL, NULL);
+            if (GetBoolean('y')) {
+                if (item.id != -2) {
+                    printf("Already have a item with this name. Change it!\n");
+                    sleep(2);
+                    continue;
+                }
+                CreateItem(newItem);
+            }
+
+            return;
+        }
+    } while (1);
+
+    GetLastItemId();
 }
 
 int main(void) {
@@ -612,7 +764,13 @@ int main(void) {
                 break;
             }
             case DELETE_SCREEN: {
-                DeleteItemScreen(page);
+                DeleteItemScreen();
+                PrintHomeScreen(page);
+                Screens = HOME_SCREEN;
+                break;
+            }
+            case CREATE_SCREEN: {
+                CreateItemScreen();
                 PrintHomeScreen(page);
                 Screens = HOME_SCREEN;
                 break;
@@ -633,11 +791,12 @@ int main(void) {
             continue;
         }
         printf(
-            "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
-            EDIT_ITEM, FIND_ITEM, DELETE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
+            "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Create item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
+            EDIT_ITEM, FIND_ITEM, DELETE_ITEM, CREATE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
 
 
         scanf("%d", &Actions);
+        getc(stdin);
         switch (Actions) {
             case EDIT_ITEM: {
                 Screens = EDIT_SCREEN;
@@ -649,6 +808,10 @@ int main(void) {
             }
             case DELETE_ITEM: {
                 Screens = DELETE_SCREEN;
+                break;
+            }
+            case CREATE_ITEM: {
+                Screens = CREATE_SCREEN;
                 break;
             }
             case RETURN_PAGE: {
