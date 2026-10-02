@@ -13,15 +13,9 @@
 #define NAME_LEN 60
 #define DELIMITERS ","
 #define MAX_ITEM_PER_PAGE 20
+#define MAX_NOTIFICATION 20
 #define ENABLE_DEBUG_LOGS 0
 #define SYS_VERSION "0.0.1"
-
-typedef struct {
-    int id;
-    char name[NAME_LEN + 1];
-    int quantity;
-    float price;
-} Item;
 
 static enum {
     HOME_SCREEN,
@@ -29,6 +23,7 @@ static enum {
     DELETE_SCREEN,
     SEARCH_SCREEN,
     CREATE_SCREEN,
+    NOTIFICATION_SCREEN,
     EXIT_SCREEN
 } Screens;
 
@@ -37,13 +32,34 @@ static enum {
     FIND_ITEM,
     DELETE_ITEM,
     CREATE_ITEM,
+    NOTIFICATION_PAGE,
     RETURN_PAGE,
     NEXT_PAGE,
     EXIT_PROGRAM
 } Actions;
 
+typedef enum {
+    DELETED,
+    AUTO_REMOVED,
+    LOW_QUANTITY
+} NotificationTypes;
+
+typedef struct {
+    int id;
+    char name[NAME_LEN + 1];
+    int quantity;
+    float price;
+} Item;
+
+typedef struct {
+    char itemName[NAME_LEN + 1];
+    NotificationTypes action;
+} Notification;
+
 
 static Item g_itens[MAX_ITEM_PER_PAGE];
+static Notification g_notification[MAX_NOTIFICATION];
+int front = -1, rear = -1;
 static int g_lastReadIndex = 0;
 static int g_fulledPage = 0;
 static int g_closedFile = 0;
@@ -161,9 +177,23 @@ static Item FindItemById(int id, fpos_t *p_initialPos, fpos_t *p_endPos) {
     return n;
 }
 
-static Item FindItemByName(const char NAME[NAME_LEN + 1], fpos_t *p_initialPos, fpos_t *p_endPos) {
+static int compareString(char str1[NAME_LEN], char str2[NAME_LEN]) {
+    //if dont match is not the same word
+    if (strlen(str1) != strlen(str2)) {
+        return 0;
+    }
+
+    for (int i = 0; i < strlen(str1); i++) {
+        if (tolower(str1[i]) != tolower(str2[i])) {
+            return 0;
+        };
+    }
+    return 1;
+}
+
+static Item FindItemByName(char name[NAME_LEN + 1], fpos_t *p_initialPos, fpos_t *p_endPos) {
     OpenFile();
-    Item n = {};
+    Item item = {};
 
     int lastId = 0;
     while (1) {
@@ -175,28 +205,18 @@ static Item FindItemByName(const char NAME[NAME_LEN + 1], fpos_t *p_initialPos, 
         ENABLE_DEBUG_LOGS && printf("o que tem: %s\n", a);
 
         char *p_token = strtok(a, DELIMITERS);
-        n = ProcessTokens(p_token);
+        item = ProcessTokens(p_token);
 
-        if (lastId == n.id) {
-            n.id = -2;
+        if (lastId == item.id) {
+            item.id = -2;
             CloseFile();
-            return n;
+            return item;
         }
-        lastId = n.id;
+        lastId = item.id;
 
-        //if dont match is not the same word
-        if (strlen(n.name) != strlen(NAME)) {
-            continue;
-        }
 
-        int isTheWord = 1;
-        for (int i = 0; i < strlen(n.name); i++) {
-            if (tolower(n.name[i]) != tolower(NAME[i])) {
-                isTheWord = 0;
-            };
-        }
         // it's not the same
-        if (!isTheWord) {
+        if (compareString(item.name, name)) {
             continue;
         }
 
@@ -207,7 +227,7 @@ static Item FindItemByName(const char NAME[NAME_LEN + 1], fpos_t *p_initialPos, 
     }
 
     CloseFile();
-    return n;
+    return item;
 }
 
 static void CreateItem(Item item) {
@@ -402,6 +422,73 @@ static int GetBoolean(const char DEFAULT_VALUE) {
     return 0;
 }
 
+static int enQueue(Notification notification) {
+    if (rear == MAX_NOTIFICATION - 1) {
+        printf("\nnotification is Full!!");
+        return 1;
+    }
+    if (front == -1) front = 0;
+    rear++;
+    g_notification[rear] = notification;
+    return 0;
+}
+
+static int deQueue() {
+    if (front == -1) {
+        printf("\nnotification is Empty!!");
+        return 0;
+    }
+    front++;
+    if (front > rear) front = rear = -1;
+
+    return 1;
+}
+
+static void SaveNotification(Notification notification) {
+    for (int j = 0; j < MAX_NOTIFICATION; j++) {
+        if (g_notification[j].action == notification.action && compareString(g_notification[j].itemName, notification.itemName)) {
+            ENABLE_DEBUG_LOGS && printf("This notification already exist");
+            return;
+        }
+    }
+    if (enQueue(notification)) {
+        deQueue();
+        enQueue(notification);
+    }
+}
+
+static void ClearNotification() {
+    while (deQueue());
+}
+
+static int HaveNotification() {
+    return front != -1;
+}
+
+static void ShowNotification() {
+    if (rear == -1)
+        printf("Notification is Empty!!! The system only save the notification until the program is running\n");
+    else {
+        int i;
+        printf("notification:\n");
+        for (i = front; i <= rear; i++) {
+            int action = g_notification[i].action;
+            switch (action) {
+                case DELETED: {
+                    printf("\tItem '%s' was deleted by the user", g_notification[i].itemName);
+                }
+                case AUTO_REMOVED: {
+                    printf("\tItem '%s' was deleted due lack of itens", g_notification[i].itemName);
+                }
+                case LOW_QUANTITY: {
+                    printf("\tThe stock of item '%s' is low.", g_notification[i].itemName);
+                }
+            }
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
 
 static void PrintDefaultScreen(int page) {
     CleanScreen();
@@ -478,6 +565,25 @@ static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos, const char PREFIX[NAME
     return item;
 }
 
+static void PrintNotificationScreen() {
+    do {
+        CleanScreen();
+        ShowNotification();
+        if (HaveNotification()) {
+            printf("Clear notification? y/N: ");
+            if (!GetBoolean('n')) {
+                ClearNotification();
+                CleanScreen();
+                ShowNotification();
+            }
+        }
+        printf("Want exit? n/Y: \n");
+        if (GetBoolean('y')) {
+            return;
+        }
+    } while (1);
+}
+
 //sorry about the monstrosity but it works, so... let's keep it!
 static void PrintEditSceen(int page, const Item *p_ITEM) {
     do {
@@ -532,30 +638,26 @@ static void PrintEditSceen(int page, const Item *p_ITEM) {
         printf("old item: %5d | %8d | %7.2f | %s \n", oldItem.id, oldItem.quantity, oldItem.price, oldItem.name);
         printf("new item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
 
-        int validResponse = 1;
-        //todo: mordenize this selection
-        do {
-            printf("You are sure about change the content \n[0] No \n[1] Yes \nAnswer: ");
-            GetEntry(buffer, bufferSize);
-            if (buffer[0] != '\0') {
-                char *p_remaining;
-                int resp = strtol(buffer, &p_remaining, 10);
-                if (resp < 0 || resp > 1) {
-                    validResponse = 0;
-                } else if (resp) {
-                    if (newItem.quantity <= 0) {
-                        printf("This item has 0 or less so will be excluded. Proceed? n/Y: ");
-                        if (!GetBoolean('y')) {
-                            DeleteItem(init_pos, &end_pos);
-                        }
-                    } else {
-                        EditLine(newItem, &init_pos);
-                    }
-                } else {
+        printf("You are sure about change the content? n/Y: ");
+        if (GetBoolean('y')) {
+            if (newItem.quantity <= 0) {
+                printf("This item has 0 or less so will be excluded. Proceed? n/Y: ");
+                if (GetBoolean('y')) {
+                    Notification notification = {.action = AUTO_REMOVED};
+                    strcpy(notification.itemName, oldItem.name);
+
+                    SaveNotification(notification);
+                    DeleteItem(init_pos, &end_pos);
                     break;
                 }
+            } else if (newItem.quantity > 0 && newItem.quantity <= 3) {
+                Notification notification = {.action = LOW_QUANTITY};
+                strcpy(notification.itemName, oldItem.name);
+
+                SaveNotification(notification);
             }
-        } while (!validResponse);
+            EditLine(newItem, &init_pos);
+        }
         break;
     } while (1);
 }
@@ -598,12 +700,15 @@ static void DeleteItemScreen() {
         return;
     }
     do {
-        int action;
         CleanScreen();
         printf("         id | quantity |  price  | name\n");
         printf("item: %5d | %8d | %7.2f | %s \n", item.id, item.quantity, item.price, item.name);
         printf("Are you sure that you want to exclude this item y/N: ");
         if (!GetBoolean('n')) {
+            Notification notification = {.action = DELETED};
+            strcpy(notification.itemName, item.name);
+
+            SaveNotification(notification);
             DeleteItem(init_pos, &end_pos);
         }
         break;
@@ -781,6 +886,12 @@ int main(void) {
                 Screens = HOME_SCREEN;
                 break;
             }
+            case NOTIFICATION_SCREEN: {
+                PrintNotificationScreen(page);
+                PrintHomeScreen(page);
+                Screens = HOME_SCREEN;
+                break;
+            }
             case EXIT_SCREEN: {
                 run_program = 0;
                 break ;
@@ -791,8 +902,9 @@ int main(void) {
             continue;
         }
         printf(
-            "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Create item | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
-            EDIT_ITEM, FIND_ITEM, DELETE_ITEM, CREATE_ITEM, RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
+            "[%d] Edit item | [%d] Find item | [%d] Delete item | [%d] Create item | [%d] Notification Page%s | [%d] Return Page | [%d] Next Page | [%d] Exit\nOption: ",
+            EDIT_ITEM, FIND_ITEM, DELETE_ITEM, CREATE_ITEM, NOTIFICATION_PAGE, HaveNotification() ? " (!)" : "",
+            RETURN_PAGE, NEXT_PAGE, EXIT_PROGRAM);
 
 
         scanf("%d", &Actions);
@@ -812,6 +924,10 @@ int main(void) {
             }
             case CREATE_ITEM: {
                 Screens = CREATE_SCREEN;
+                break;
+            }
+            case NOTIFICATION_PAGE: {
+                Screens = NOTIFICATION_SCREEN;
                 break;
             }
             case RETURN_PAGE: {
