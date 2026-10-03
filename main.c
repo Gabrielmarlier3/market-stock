@@ -502,15 +502,19 @@ static void ShowNotification() {
             switch (action) {
                 case DELETED: {
                     printf("\tItem '%s' was deleted by the user", notification.itemName);
+                    break;
                 }
                 case AUTO_REMOVED: {
                     printf("\tItem '%s' was deleted due lack of itens", notification.itemName);
+                    break;
                 }
                 case LOW_QUANTITY: {
                     printf("\tThe stock of item '%s' is low.", notification.itemName);
+                    break;
                 }
                 case NOT_SET: {
                 }
+                default: ;
             }
             printf("\n");
             if (tempIndex >= 0) {
@@ -608,7 +612,7 @@ static void PrintNotificationScreen() {
                 ShowNotification();
             }
         }
-        printf("Want exit? n/Y: \n");
+        printf("Want exit? n/Y: ");
         if (GetBoolean('y')) {
             return;
         }
@@ -832,7 +836,7 @@ static void CreateItemScreen() {
         if (state >= 3) {
             CleanScreen();
             printf("         id | quantity |  price  | name\n");
-            printf("item: %5d | %8d | %7.2f | %s \n", newItem.id, newItem.quantity, newItem.price, newItem.name);
+            printf("item: %5d | %8d | %7.2f | %s \n", newItem.id + 1, newItem.quantity, newItem.price, newItem.name);
             printf("Want change some item? y/N?: ");
 
             if (!GetBoolean('n')) {
