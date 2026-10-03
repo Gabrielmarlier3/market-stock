@@ -244,24 +244,24 @@ This program was made without any use of AI, such as Gemini, ChatGPT, Claude, or
 
 - Websites:
 
-https://www.ibm.com/docs/en/i/7.4.0
+  https://www.ibm.com/docs/en/i/7.4.0
 
-https://cppreference.com/
+  https://cppreference.com/
 
-https://www.geeksforgeeks.org/
-
-https://www.programiz.com/dsa/queue
-
-https://www.reddit.com/
-
-https://en.wikipedia.org/
-
-https://pubs.opengroup.org/
-
-https://gcc.gnu.org/
-
-https://stackoverflow.com
+  https://www.geeksforgeeks.org/
+  
+  https://www.programiz.com/dsa/queue
+  
+  https://www.reddit.com/
+  
+  https://en.wikipedia.org/
+  
+  https://pubs.opengroup.org/
+  
+  https://gcc.gnu.org/
+  
+  https://stackoverflow.com
 
 - Books:
 
-K. N. King - C Programming
+  K. N. King - C Programming
