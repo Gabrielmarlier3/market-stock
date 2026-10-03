@@ -149,14 +149,14 @@ When a valid ID or name is provided, the system will show the screen allowing th
 This option lets the user delete an item at any moment.
 
 <p align="center">
-  <img src="assets/delete.png" width="707" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/delete.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 After giving a valid ID or name, the system will ask if the user really wants to delete the item
 
 <p align="center">
-  <img src="assets/delete_confirmation.png" width="698" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/delete_confirmation.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
@@ -167,42 +167,42 @@ And if the answer is `y`, the system will delete the item and create a notificat
 This option lets the user create an item at any moment. After choosing this option, a small form will open and let the user fill
 
 <p align="center">
-  <img src="assets/create_form.png" width="695" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_form.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 After all items have been filled in correctly, a resume screen will appear
 
 <p align="center">
-  <img src="assets/create_form_confirmation.png" width="688" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_form_confirmation.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 The user can change a value without restarting the process by sending `y`
 
 <p align="center">
-  <img src="assets/create_form_change.png" width="693" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_form_change.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 Whenever everything is great, the user can save it in the database
 
 <p align="center">
-  <img src="assets/create_save_confirmation.png" width="695" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_save_confirmation.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 And the item will persist
 
 <p align="center">
-  <img src="assets/create_persist.png" width="699" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_persist.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
 Still in item creation, if the user tries to create an item that already exists, the system will show an alert and ask the user to change the name
 
 <p align="center">
-  <img src="assets/create_error.png" width="693" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
+  <img src="assets/create_error.png" width="700" alt="Median lines of code per arm across Haiku, Sonnet and Opus">
 </p>
 
 
