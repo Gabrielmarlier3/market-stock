@@ -1,7 +1,5 @@
-1,feijao,3,14.90,                                                                                 ;
-2,arroz,2,22.50,                                                                                  ;
+1,feijao,3,14.90                                                                                  ;
 3,macarrao,5,7.99,                                                                                ;
-4,acucar,1,6.49,                                                                                  ;
 5,cafe,2,18.90,                                                                                   ;
 6,leite,6,5.79,                                                                                   ;
 7,farinha,3,8.50,                                                                                 ;
