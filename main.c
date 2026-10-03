@@ -3,9 +3,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
-#include<unistd.h>
+#include <threads.h>
 
-//todo: debug only, this need came from .env
 #define DEFAULT_DB_PATH "/home/gabriel/repositorios/loja_do_marcos/db.txt"
 #define LINE_MAX_LEN 100
 #define NAME_LEN 60
@@ -93,6 +92,10 @@ static void CloseFile() {
         printf("File didn't close correctly");
     }
     g_closedFile = 1;
+}
+
+static void sleep(int seconds) {
+    thrd_sleep(&(struct timespec){.tv_sec = seconds}, NULL); // sleep 1 sec
 }
 
 static Item ProcessTokens(char *p_token) {
@@ -513,7 +516,6 @@ static void ShowNotification() {
             if (tempIndex >= 0) {
                 i = 0;
             }
-
         } while (1);
     }
     printf("\n");
@@ -878,10 +880,10 @@ static void CreateItemScreen() {
 }
 
 int main(void) {
-    char *valor = getenv("DB_PATH");
+    const char *DB_PATH = getenv("DB_PATH");
 
-    if (valor != NULL) {
-        strcpy(g_dbPath, valor);
+    if (DB_PATH != NULL) {
+        strcpy(g_dbPath, DB_PATH);
     } else {
         strcpy(g_dbPath, DEFAULT_DB_PATH);
     }
