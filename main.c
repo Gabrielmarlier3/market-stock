@@ -5,15 +5,13 @@
 #include <limits.h>
 #include<unistd.h>
 
-//todo: Remove all the fucking scanf this shit is horrible
-////todo: define a good project pad
 //todo: debug only, this need came from .env
-#define DB_PATH "/home/gabriel/repositorios/loja_do_marcos/db.txt"
+#define DEFAULT_DB_PATH "/home/gabriel/repositorios/loja_do_marcos/db.txt"
 #define LINE_MAX_LEN 100
 #define NAME_LEN 60
 #define DELIMITERS ","
 #define MAX_ITEM_PER_PAGE 20
-#define MAX_NOTIFICATION 20
+#define MAX_NOTIFICATION 5
 #define ENABLE_DEBUG_LOGS 0
 #define SYS_VERSION "0.0.1"
 
@@ -39,6 +37,7 @@ static enum {
 } Actions;
 
 typedef enum {
+    NOT_SET,
     DELETED,
     AUTO_REMOVED,
     LOW_QUANTITY
@@ -59,11 +58,13 @@ typedef struct {
 
 static Item g_itens[MAX_ITEM_PER_PAGE];
 static Notification g_notification[MAX_NOTIFICATION];
-int front = -1, rear = -1;
+static char g_dbPath[4028];
 static int g_lastReadIndex = 0;
 static int g_fulledPage = 0;
 static int g_closedFile = 0;
 static int g_lastItemId = 0;
+static int g_front = -1;
+static int g_rear = -1;
 static FILE *g_database;
 
 
@@ -73,7 +74,7 @@ static int OpenFile() {
         return 1;
     }
 
-    g_database = fopen(DB_PATH, "r+");
+    g_database = fopen(g_dbPath, "r+");
 
     if (g_database == NULL) {
         printf("File didn't open correctly");
@@ -306,13 +307,13 @@ static int DeleteItem(const fpos_t INITIAL_POS, const fpos_t *p_FINAL_POS) {
     fflush(p_fp2);
 
     // deletes the original database
-    if (remove(DB_PATH)) {
+    if (remove(g_dbPath)) {
         perror("cannot remove database");
         CloseFile();
         return 1;
     }
     // the pass the tmpFile to became the new database.
-    if (rename(tmpFileName, DB_PATH)) {
+    if (rename(tmpFileName, g_dbPath)) {
         perror("cannot rename database");
         CloseFile();
         return 1;
@@ -423,30 +424,36 @@ static int GetBoolean(const char DEFAULT_VALUE) {
 }
 
 static int enQueue(Notification notification) {
-    if (rear == MAX_NOTIFICATION - 1) {
+    if (g_rear == MAX_NOTIFICATION - 1) {
         printf("\nnotification is Full!!");
+        g_rear = -1;
         return 1;
     }
-    if (front == -1) front = 0;
-    rear++;
-    g_notification[rear] = notification;
+    if (g_front == -1) g_front = 0;
+    g_rear++;
+    g_notification[g_rear] = notification;
     return 0;
 }
 
 static int deQueue() {
-    if (front == -1) {
+    if (g_front == -1) {
         printf("\nnotification is Empty!!");
         return 0;
     }
-    front++;
-    if (front > rear) front = rear = -1;
+    Notification notification = g_notification[g_front];
+    printf("Notification %s\n", notification.itemName);
+    g_front++;
+    if (g_front > g_rear) {
+        g_front = g_rear = -1;
+    }
 
     return 1;
 }
 
 static void SaveNotification(Notification notification) {
     for (int j = 0; j < MAX_NOTIFICATION; j++) {
-        if (g_notification[j].action == notification.action && compareString(g_notification[j].itemName, notification.itemName)) {
+        if (g_notification[j].action == notification.action && compareString(
+                g_notification[j].itemName, notification.itemName)) {
             ENABLE_DEBUG_LOGS && printf("This notification already exist");
             return;
         }
@@ -462,16 +469,15 @@ static void ClearNotification() {
 }
 
 static int HaveNotification() {
-    return front != -1;
+    return g_front != -1;
 }
 
 static void ShowNotification() {
-    if (rear == -1)
+    if (g_rear == -1)
         printf("Notification is Empty!!! The system only save the notification until the program is running\n");
     else {
-        int i;
         printf("notification:\n");
-        for (i = front; i <= rear; i++) {
+        for (int i = g_front; i <= MAX_NOTIFICATION; i++) {
             int action = g_notification[i].action;
             switch (action) {
                 case DELETED: {
@@ -482,6 +488,8 @@ static void ShowNotification() {
                 }
                 case LOW_QUANTITY: {
                     printf("\tThe stock of item '%s' is low.", g_notification[i].itemName);
+                }
+                case NOT_SET: {
                 }
             }
             printf("\n");
@@ -517,10 +525,10 @@ static Item FindItem(fpos_t *p_initPos, fpos_t *p_endPos, const char PREFIX[NAME
     Item item;
     do {
         CleanScreen();
-        int action =
-                printf(
-                    "%sWhat kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ",
-                    PREFIX);
+        int action;
+        printf(
+            "%sWhat kind of method do you want use to find you item\n[1] ID [2] Name [3] Return - Option: ",
+            PREFIX);
         scanf("%d", &action);
         getc(stdin);
 
@@ -849,7 +857,16 @@ static void CreateItemScreen() {
 }
 
 int main(void) {
-    if (!OpenFile(g_database, DB_PATH)) {
+    char *valor = getenv("DB_PATH");
+
+    if (valor != NULL) {
+        strcpy(g_dbPath, valor);
+    } else {
+        strcpy(g_dbPath, DEFAULT_DB_PATH);
+    }
+
+
+    if (!OpenFile()) {
         return EXIT_FAILURE;
     };
 
