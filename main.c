@@ -223,7 +223,7 @@ static Item FindItemByName(char name[NAME_LEN + 1], fpos_t *p_initialPos, fpos_t
 
 
         // it's not the same
-        if (compareString(item.name, name)) {
+        if (!compareString(item.name, name)) {
             continue;
         }
 
