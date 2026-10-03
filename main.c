@@ -53,18 +53,21 @@ typedef struct {
 typedef struct {
     char itemName[NAME_LEN + 1];
     NotificationTypes action;
+    int notificationIndex;
 } Notification;
 
 
 static Item g_itens[MAX_ITEM_PER_PAGE];
 static Notification g_notification[MAX_NOTIFICATION];
 static char g_dbPath[4028];
+static int g_notificationIndex = 0;
 static int g_lastReadIndex = 0;
 static int g_fulledPage = 0;
 static int g_closedFile = 0;
 static int g_lastItemId = 0;
 static int g_front = -1;
 static int g_rear = -1;
+
 static FILE *g_database;
 
 
@@ -431,6 +434,7 @@ static int enQueue(Notification notification) {
     }
     if (g_front == -1) g_front = 0;
     g_rear++;
+    notification.notificationIndex = g_notificationIndex++;
     g_notification[g_rear] = notification;
     return 0;
 }
@@ -465,7 +469,9 @@ static void SaveNotification(Notification notification) {
 }
 
 static void ClearNotification() {
-    while (deQueue());
+    while (deQueue()) {
+    }
+    g_notificationIndex = 0;
 }
 
 static int HaveNotification() {
@@ -477,23 +483,38 @@ static void ShowNotification() {
         printf("Notification is Empty!!! The system only save the notification until the program is running\n");
     else {
         printf("notification:\n");
-        for (int i = g_front; i <= MAX_NOTIFICATION; i++) {
-            int action = g_notification[i].action;
+        int i = 0;
+        int tempIndex = g_notificationIndex - 1;
+        do {
+            Notification notification = g_notification[i];
+            i++;
+            if (notification.notificationIndex != tempIndex) {
+                if (tempIndex < 0) {
+                    break;
+                }
+                continue;
+            }
+            tempIndex--;
+            int action = notification.action;
             switch (action) {
                 case DELETED: {
-                    printf("\tItem '%s' was deleted by the user", g_notification[i].itemName);
+                    printf("\tItem '%s' was deleted by the user", notification.itemName);
                 }
                 case AUTO_REMOVED: {
-                    printf("\tItem '%s' was deleted due lack of itens", g_notification[i].itemName);
+                    printf("\tItem '%s' was deleted due lack of itens", notification.itemName);
                 }
                 case LOW_QUANTITY: {
-                    printf("\tThe stock of item '%s' is low.", g_notification[i].itemName);
+                    printf("\tThe stock of item '%s' is low.", notification.itemName);
                 }
                 case NOT_SET: {
                 }
             }
             printf("\n");
-        }
+            if (tempIndex >= 0) {
+                i = 0;
+            }
+
+        } while (1);
     }
     printf("\n");
 }
